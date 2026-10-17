@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pickup Point Table</title>
+<script src="https://js.jotform.com/JotFormCustomWidget.min.js"></script>
+<style>
+  :root {
+    --text: #1f2933;
+    --muted: #616e7c;
+    --border: #cbd2d9;
+    --header-bg: #f0f4f8;
+    --input-bg: #ffffff;
+    --focus: #2563eb;
+    --error: #c81e1e;
+    --error-bg: #fdecec;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 14px;
+  }
+  .wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { border-collapse: separate; border-spacing: 0; width: 100%; table-layout: fixed; }
+  th, td { border-bottom: 1px solid var(--border); padding: 6px 4px; vertical-align: middle; }
+  thead th {
+    background: var(--header-bg);
+    font-weight: 600;
+    font-size: 13px;
+    text-align: center;
+    word-break: break-word;
+    hyphens: auto;
+  }
+  tbody th {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--header-bg);
+    font-weight: 500;
+    text-align: left;
+    word-break: break-word;
+    hyphens: auto;
+  }
+  thead th:first-child { position: sticky; left: 0; z-index: 2; }
+  col.label-col { width: 32%; }
+  col.pp-col { min-width: 64px; }
+  .req { color: var(--error); margin-left: 2px; }
+  td { text-align: center; }
+
+  input[type="text"], select {
+    width: 100%;
+    min-width: 0;
+    /* 16px prevents iOS from zooming in on focus */
+    font-size: 16px;
+    padding: 6px 4px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--input-bg);
+    color: var(--text);
+  }
+  input.narrow { max-width: 6.5ch; text-align: center; }
+  input[type="checkbox"] { width: 22px; height: 22px; margin: 0; }
+  input:focus, select:focus { outline: 2px solid var(--focus); outline-offset: -1px; }
+  .invalid input, .invalid select { border-color: var(--error); background: var(--error-bg); }
+  .invalid input[type="checkbox"] { outline: 2px solid var(--error); }
+
+  .errors { color: var(--error); font-size: 13px; margin: 8px 0 0; padding-left: 18px; }
+  .errors:empty { display: none; }
+  .config-error {
+    color: var(--error);
+    background: var(--error-bg);
+    border: 1px solid var(--error);
+    border-radius: 4px;
+    padding: 8px 10px;
+    white-space: pre-wrap;
+  }
+
+  .dev { margin-top: 16px; padding-top: 12px; border-top: 2px dashed var(--border); }
+  .dev pre { background: var(--header-bg); padding: 8px; overflow-x: auto; font-size: 12px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var TYPES = ['dropdown', 'number', 'text', 'checkbox', 'timestamp'];
+  var MAX_PICKUP_POINTS = 4;
+  var DEFAULT_NUMBER = /^-?\d+(?:[.,]\d+)?$/;
+
+  var MSG = {
+    required: 'Må fylles ut',
+    invalidFormat: 'Ugyldig format',
+    invalidNumber: 'Ugyldig tall',
+    choose: '–'
+  };
+
+  // Used when the page is opened directly in a browser instead of inside Jotform.
+  var DEMO = {
+    columns: JSON.stringify([
+      { name: 'arrived', type: 'timestamp', label: 'Ankomst', validate: '\\d{1,2}[:.,]?\\d{2}', required: true },
+      { name: 'parcels', type: 'number', label: 'Antall pakker', required: true },
+      { name: 'deviation', type: 'dropdown', label: 'Avvik', options: ['Ingen', 'Forsinket', 'Skadet', 'Mangler'], required: true },
+      { name: 'photo', type: 'checkbox', label: 'Bilde tatt' },
+      { name: 'comment', type: 'text', label: 'Kommentar' }
+    ]),
+    pickupPoints: 'Kiwi Sentrum\nCoop Extra Storgata\nRema 1000 Nord\nJoker Fjellet'
+  };
+
+  var root = document.getElementById('root');
+  var JF = window.JFCustomWidget;
+  var devMode = !JF || window.self === window.top;
+
+  var columns = [];
+  var pickupPoints = [];
+  var cells = []; // cells[columnIndex][pickupIndex] = { el, td }
+  var errorList = null;
+  var showErrors = false;
+
+  // ---------- config ----------
+
+  function parseColumns(raw) {
+    var list;
+    try {
+      list = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    } catch (e) {
+      throw new Error('"columns" er ikke gyldig JSON: ' + e.message);
+    }
+    if (!Array.isArray(list) || list.length === 0) {
+      throw new Error('"columns" må være en ikke-tom JSON-liste.');
+    }
+    var seen = {};
+    return list.map(function (c, i) {
+      var where = 'columns[' + i + ']';
+      if (!c || typeof c.name !== 'string' || !c.name) throw new Error(where + ': mangler "name".');
+      if (seen[c.name]) throw new Error(where + ': "name" ' + c.name + ' er brukt flere ganger.');
+      seen[c.name] = true;
+      if (TYPES.indexOf(c.type) === -1) {
+        throw new Error(where + ': ukjent "type" ' + c.type + '. Gyldige: ' + TYPES.join(', ') + '.');
+      }
+      if (c.type === 'dropdown' && (!Array.isArray(c.options) || c.options.length === 0)) {
+        throw new Error(where + ': dropdown må ha "options".');
+      }
+      var regex = null;
+      if (c.validate && c.type !== 'checkbox' && c.type !== 'dropdown') {
+        try {
+          regex = new RegExp('^(?:' + c.validate + ')$');
+        } catch (e) {
+          throw new Error(where + ': ugyldig "validate": ' + e.message);
+        }
+      }
+      return {
+        name: c.name,
+        type: c.type,
+        label: c.label || c.name,
+        required: !!c.required && c.type !== 'checkbox',
+        options: c.type === 'dropdown' ? c.options.map(String) : null,
+        regex: regex
+      };
+    });
+  }
+
+  function parsePickupPoints(raw) {
+    var list;
+    var text = (raw || '').trim();
+    if (text.charAt(0) === '[') {
+      try {
+        list = JSON.parse(text);
+      } catch (e) {
+        throw new Error('"pickupPoints" er ikke gyldig JSON: ' + e.message);
+      }
+    } else {
+      list = text.split(/\r?\n/);
+    }
+    list = list.map(function (p) { return String(p).trim(); }).filter(Boolean);
+    if (list.length === 0) throw new Error('"pickupPoints" er tom.');
+    if (list.length > MAX_PICKUP_POINTS) {
+      throw new Error('"pickupPoints" har ' + list.length + ' hentesteder, maks er ' + MAX_PICKUP_POINTS + '.');
+    }
+    return list;
+  }
+
+  // ---------- rendering ----------
+
+  function el(tag, attrs, children) {
+    var node = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      if (k === 'text') node.textContent = attrs[k];
+      else if (k === 'className') node.className = attrs[k];
+      else node.setAttribute(k, attrs[k]);
+    });
+    (children || []).forEach(function (child) { node.appendChild(child); });
+    return node;
+  }
+
+  function createControl(col, pickupPoint) {
+    var aria = col.label + ' – ' + pickupPoint;
+    var control;
+    if (col.type === 'checkbox') {
+      control = el('input', { type: 'checkbox', 'aria-label': aria });
+    } else if (col.type === 'dropdown') {
+      control = el('select', { 'aria-label': aria });
+      control.appendChild(el('option', { value: '', text: MSG.choose }));
+      col.options.forEach(function (o) { control.appendChild(el('option', { value: o, text: o })); });
+    } else {
+      control = el('input', { type: 'text', 'aria-label': aria, autocomplete: 'off' });
+      if (col.type === 'number' || col.type === 'timestamp') {
+        control.className = 'narrow';
+        // Numeric keypad with a separator key on both iOS and Android
+        control.setAttribute('inputmode', 'decimal');
+      }
+      if (col.type === 'timestamp') control.setAttribute('maxlength', '5');
+    }
+    control.addEventListener(col.type === 'text' ? 'input' : 'change', onChange);
+    if (col.type !== 'checkbox' && col.type !== 'dropdown') control.addEventListener('blur', onChange);
+    return control;
+  }
+
+  function render() {
+    var colgroup = el('colgroup', {}, [el('col', { className: 'label-col' })].concat(
+      pickupPoints.map(function () { return el('col', { className: 'pp-col' }); })
+    ));
+
+    var headRow = el('tr', {}, [el('th', { scope: 'col' })].concat(
+      pickupPoints.map(function (pp) { return el('th', { scope: 'col', text: pp }); })
+    ));
+
+    cells = [];
+    var body = el('tbody', {}, columns.map(function (col, ci) {
+      var label = el('th', { scope: 'row', text: col.label });
+      if (col.required) label.appendChild(el('span', { className: 'req', 'aria-hidden': 'true', text: '*' }));
+      cells[ci] = [];
+      var tds = pickupPoints.map(function (pp, pi) {
+        var control = createControl(col, pp);
+        var td = el('td', {}, [control]);
+        cells[ci][pi] = { el: control, td: td };
+        return td;
+      });
+      return el('tr', {}, [label].concat(tds));
+    }));
+
+    errorList = el('ul', { className: 'errors', role: 'alert' });
+    root.innerHTML = '';
+    root.appendChild(el('div', { className: 'wrap' }, [
+      el('table', {}, [colgroup, el('thead', {}, [headRow]), body])
+    ]));
+    root.appendChild(errorList);
+  }
+
+  function renderConfigError(err) {
+    root.innerHTML = '';
+    root.appendChild(el('div', { className: 'config-error', text: 'Feil i widget-oppsettet:\n' + err.message }));
+  }
+
+  // ---------- values ----------
+
+  function readCell(col, control) {
+    if (col.type === 'checkbox') return control.checked;
+    var s = control.value.trim();
+    if (col.type !== 'number') return s;
+    if (s === '') return null;
+    var n = Number(s.replace(',', '.'));
+    return isFinite(n) ? n : s;
+  }
+
+  function getValue() {
+    return pickupPoints.map(function (pp, pi) {
+      var values = {};
+      columns.forEach(function (col, ci) { values[col.name] = readCell(col, cells[ci][pi].el); });
+      return { pickupPoint: pp, values: values };
+    });
+  }
+
+  function restoreValue(raw) {
+    var saved;
+    try {
+      saved = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    } catch (e) {
+      return;
+    }
+    if (!Array.isArray(saved)) return;
+    saved.forEach(function (entry) {
+      var pi = entry && pickupPoints.indexOf(entry.pickupPoint);
+      if (pi === -1 || pi == null || !entry.values) return;
+      columns.forEach(function (col, ci) {
+        var v = entry.values[col.name];
+        if (v === undefined || v === null) return;
+        var control = cells[ci][pi].el;
+        if (col.type === 'checkbox') control.checked = v === true;
+        else control.value = String(v);
+      });
+    });
+  }
+
+  // ---------- validation ----------
+
+  function cellError(col, control) {
+    if (col.type === 'checkbox') return null;
+    var s = control.value.trim();
+    if (s === '') return col.required ? MSG.required : null;
+    if (col.regex) return col.regex.test(s) ? null : MSG.invalidFormat;
+    if (col.type === 'number' && !DEFAULT_NUMBER.test(s)) return MSG.invalidNumber;
+    return null;
+  }
+
+  function validate() {
+    var errors = [];
+    columns.forEach(function (col, ci) {
+      pickupPoints.forEach(function (pp, pi) {
+        var cell = cells[ci][pi];
+        var msg = cellError(col, cell.el);
+        var visible = !!msg && showErrors;
+        cell.td.classList.toggle('invalid', visible);
+        if (visible) cell.el.setAttribute('aria-invalid', 'true');
+        else cell.el.removeAttribute('aria-invalid');
+        cell.el.title = visible ? msg : '';
+        if (msg) errors.push(pp + ' – ' + col.label + ': ' + msg);
+      });
+    });
+    errorList.innerHTML = '';
+    if (showErrors) errors.forEach(function (e) { errorList.appendChild(el('li', { text: e })); });
+    return errors;
+  }
+
+  // ---------- Jotform glue ----------
+
+  function resize() {
+    if (devMode) return;
+    JF.requestFrameResize({ height: Math.ceil(document.documentElement.scrollHeight) });
+  }
+
+  function onChange() {
+    if (showErrors) validate();
+    if (!devMode) JF.sendData({ value: JSON.stringify(getValue()) });
+  }
+
+  function onSubmit() {
+    showErrors = true;
+    var errors = validate();
+    var result = { valid: errors.length === 0, value: JSON.stringify(getValue()) };
+    if (!devMode) JF.sendSubmit(result);
+    return result;
+  }
+
+  function init(settings, savedValue) {
+    try {
+      columns = parseColumns(settings.columns);
+      pickupPoints = parsePickupPoints(settings.pickupPoints);
+    } catch (err) {
+      renderConfigError(err);
+      return false;
+    }
+    render();
+    if (savedValue) restoreValue(savedValue);
+    validate();
+    return true;
+  }
+
+  if (window.ResizeObserver) new ResizeObserver(resize).observe(document.body);
+
+  if (devMode) {
+    if (init(DEMO, null)) {
+      var out = el('pre', { text: '(trykk knappen)' });
+      var btn = el('button', { type: 'button', text: 'Simuler innsending' });
+      btn.addEventListener('click', function () {
+        var r = onSubmit();
+        out.textContent = 'valid: ' + r.valid + '\n\n' + JSON.stringify(JSON.parse(r.value), null, 2);
+      });
+      document.body.appendChild(el('div', { className: 'dev' }, [
+        el('strong', { text: 'Utviklermodus (ikke i Jotform)' }), el('br'), btn, out
+      ]));
+    }
+  } else {
+    JF.subscribe('ready', function (data) {
+      init({
+        columns: JF.getWidgetSetting('columns'),
+        pickupPoints: JF.getWidgetSetting('pickupPoints')
+      }, data && data.value);
+      resize();
+    });
+    JF.subscribe('submit', onSubmit);
+  }
+})();
+</script>
+</body>
+</html>
