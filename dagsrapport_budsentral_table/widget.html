@@ -103,9 +103,19 @@
   };
 
   // Used when the page is opened directly in a browser instead of inside Jotform.
+  // var DEMO = {
+  //   columns: JSON.stringify([
+  //     { name: 'arrived', type: 'timestamp', label: 'Ankomst', validate: '\\d{1,2}[:.,]?\\d{2}', required: true },
+  //     { name: 'parcels', type: 'number', label: 'Antall pakker', required: true },
+  //     { name: 'deviation', type: 'dropdown', label: 'Avvik', options: ['Ingen', 'Forsinket', 'Skadet', 'Mangler'], required: true },
+  //     { name: 'photo', type: 'checkbox', label: 'Bilde tatt' },
+  //     { name: 'comment', type: 'text', label: 'Kommentar' }
+  //   ]),
+  //   pickupPoints: 'Kiwi Sentrum\nCoop Extra Storgata\nRema 1000 Nord\nJoker Fjellet'
+  // };
   var DEMO = {
     columns: JSON.stringify([
-      { name: 'arrived', type: 'timestamp', label: 'Ankomst', validate: '\\d{1,2}[:.,]?\\d{2}', required: true },
+      { name: 'arrived', type: 'timestamp', label: 'Ankomst',  required: true },
       { name: 'parcels', type: 'number', label: 'Antall pakker', required: true },
       { name: 'deviation', type: 'dropdown', label: 'Avvik', options: ['Ingen', 'Forsinket', 'Skadet', 'Mangler'], required: true },
       { name: 'photo', type: 'checkbox', label: 'Bilde tatt' },
@@ -113,6 +123,8 @@
     ]),
     pickupPoints: 'Kiwi Sentrum\nCoop Extra Storgata\nRema 1000 Nord\nJoker Fjellet'
   };
+    
+
 
   var root = document.getElementById('root');
   var JF = window.JFCustomWidget;
@@ -381,8 +393,8 @@
   } else {
     JF.subscribe('ready', function (data) {
       init({
-        columns: JF.getWidgetSetting('columns'),
-        pickupPoints: JF.getWidgetSetting('pickupPoints')
+        columns: JF.getWidgetSettings()['columns'],
+        pickupPoints: JF.getWidgetSettings()['pickupPoints']
       }, data && data.value);
       resize();
     });
