@@ -128,6 +128,7 @@
 
   function parseColumns(raw) {
     var list;
+    console.log('parseColumns raw input:', raw);
     try {
       list = typeof raw === 'string' ? JSON.parse(raw) : raw;
     } catch (e) {
