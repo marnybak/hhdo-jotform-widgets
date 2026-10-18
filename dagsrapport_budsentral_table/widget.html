@@ -52,7 +52,7 @@
   .req { color: var(--error); margin-left: 2px; }
   td { text-align: left; }
 
-  input[type="text"], select, textarea {
+  input[type="text"], input[type="time"], select, textarea {
     width: 100%;
     min-width: 0;
     /* 16px prevents iOS from zooming in on focus */
@@ -64,6 +64,9 @@
     color: var(--text);
   }
   input.narrow { max-width: 6.5ch; text-align: center; }
+  /* iOS Safari collapses an empty time input without an explicit height */
+  input[type="time"] { display: block; min-height: 36px; -webkit-appearance: none; appearance: none; }
+  input[type="time"]::-webkit-date-and-time-value { text-align: left; }
   input[type="checkbox"] { width: 22px; height: 22px; margin: 0; }
   textarea { resize: vertical; font-family: inherit; line-height: 1.3; }
   input:focus, select:focus, textarea:focus { outline: 2px solid var(--focus); outline-offset: -1px; }
@@ -169,7 +172,7 @@
         if (!(rows >= 1 && rows % 1 === 0)) throw new Error(where + ': "rows" må være et positivt heltall.');
       }
       var regex = null;
-      if (c.validate && c.type !== 'checkbox' && c.type !== 'dropdown') {
+      if (c.validate && (c.type === 'text' || c.type === 'textarea' || c.type === 'number')) {
         try {
           regex = new RegExp('^(?:' + c.validate + ')$');
         } catch (e) {
@@ -232,18 +235,23 @@
       col.options.forEach(function (o) { control.appendChild(el('option', { value: o, text: o })); });
     } else if (col.type === 'textarea') {
       control = el('textarea', { rows: col.rows, 'aria-label': aria, autocomplete: 'off' });
+    } else if (col.type === 'timestamp') {
+      // Native time picker; the value is always "HH:MM" or "" (empty or incomplete)
+      control = el('input', { type: 'time', 'aria-label': aria, step: '60' });
+
+      //control = el('input', { type: 'time', 'aria-label': aria });
     } else {
       control = el('input', { type: 'text', 'aria-label': aria, autocomplete: 'off' });
-      if (col.type === 'number' || col.type === 'timestamp') {
+      if (col.type === 'number') {
         // control.className = 'narrow';
         // Numeric keypad with a separator key on both iOS and Android
         control.setAttribute('inputmode', 'decimal');
       }
-      if (col.type === 'timestamp') control.setAttribute('maxlength', '5');
     }
-    var typing = col.type === 'text' || col.type === 'textarea';
+    var typing = col.type === 'text' || col.type === 'textarea' || col.type === 'number';
     control.addEventListener(typing ? 'input' : 'change', onChange);
-    if (col.type !== 'checkbox' && col.type !== 'dropdown') control.addEventListener('blur', onChange);
+    // Errors for a cell show once the user has left it (or after a submit attempt)
+    if (col.type !== 'checkbox') control.addEventListener('blur', onBlur);
     return control;
   }
 
@@ -340,16 +348,18 @@
       pickupPoints.forEach(function (pp, pi) {
         var cell = cells[ci][pi];
         var msg = cellError(col, cell.el);
-        var visible = !!msg && showErrors;
+        var visible = !!msg && (showErrors || cell.el.dataset.touched === '1');
         cell.td.classList.toggle('invalid', visible);
         if (visible) cell.el.setAttribute('aria-invalid', 'true');
         else cell.el.removeAttribute('aria-invalid');
         cell.el.title = visible ? msg : '';
-        if (msg) errors.push(pp + ' – ' + col.label + ': ' + msg);
+        if (msg) errors.push({ text: pp + ' – ' + col.label + ': ' + msg, visible: visible });
       });
     });
     errorList.innerHTML = '';
-    if (showErrors) errors.forEach(function (e) { errorList.appendChild(el('li', { text: e })); });
+    errors.forEach(function (e) {
+      if (e.visible) errorList.appendChild(el('li', { text: e.text }));
+    });
     return errors;
   }
 
@@ -360,8 +370,13 @@
     JF.requestFrameResize({ height: Math.ceil(document.documentElement.scrollHeight) });
   }
 
+  function onBlur(e) {
+    e.target.dataset.touched = '1';
+    validate();
+  }
+
   function onChange() {
-    if (showErrors) validate();
+    validate();
     if (!devMode) JF.sendData({ value: JSON.stringify(getValue()) });
   }
 
