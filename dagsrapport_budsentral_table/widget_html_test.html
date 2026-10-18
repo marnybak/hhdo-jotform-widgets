@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pickup Point Table (HTML test)</title>
+<script src="https://js.jotform.com/JotFormCustomWidget.min.js"></script>
+<style>
+  :root {
+    --text: #1f2933;
+    --muted: #616e7c;
+    --border: #cbd2d9;
+    --header-bg: #f0f4f8;
+    --input-bg: #ffffff;
+    --focus: #2563eb;
+    --error: #c81e1e;
+    --error-bg: #fdecec;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 12px;
+  }
+  .wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { border-collapse: separate; border-spacing: 0; width: 100%; table-layout: fixed; }
+  th, td { border-bottom: 1px solid var(--border); padding: 6px 4px; vertical-align: middle; text-align: center; }
+  thead th {
+    background: var(--header-bg);
+    font-weight: 600;
+    font-size: 12px;
+    text-align: center;
+    word-break: break-word;
+    hyphens: auto;
+  }
+  tbody th {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--header-bg);
+    font-weight: 500;
+    text-align: left;
+    word-break: break-word;
+    hyphens: auto;
+  }
+  thead th:first-child { position: sticky; left: 0; z-index: 2; }
+  col.label-col { width: 20%; }
+  col.pp-col { min-width: 64px; }
+  .req { color: var(--error); margin-left: 2px; }
+
+  input[type="text"], input[type="time"], select, textarea {
+    width: 100%;
+    min-width: 0;
+    /* 16px prevents iOS from zooming in on focus */
+    font-size: 16px;
+    padding: 6px 4px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--input-bg);
+    color: var(--text);
+  }
+  input.narrow { max-width: 6.5ch; text-align: center; }
+  /* iOS Safari collapses an empty time input without an explicit height */
+  input[type="time"] { display: block; min-height: 36px; -webkit-appearance: none; appearance: none; }
+  input[type="time"]::-webkit-date-and-time-value { text-align: left; }
+  input[type="checkbox"] { width: 22px; height: 22px; margin: 0; }
+  textarea { resize: vertical; font-family: inherit; line-height: 1.3; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--focus); outline-offset: -1px; }
+  .invalid input, .invalid select, .invalid textarea { border-color: var(--error); background: var(--error-bg); }
+  .invalid input[type="checkbox"] { outline: 2px solid var(--error); }
+
+  .errors { color: var(--error); font-size: 13px; margin: 8px 0 0; padding-left: 18px; }
+  .errors:empty { display: none; }
+  .config-error {
+    color: var(--error);
+    background: var(--error-bg);
+    border: 1px solid var(--error);
+    border-radius: 4px;
+    padding: 8px 10px;
+    white-space: pre-wrap;
+  }
+
+  .dev { margin-top: 16px; padding-top: 12px; border-top: 2px dashed var(--border); }
+  .dev pre { background: var(--header-bg); padding: 8px; overflow-x: auto; font-size: 12px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var TYPES = ['dropdown', 'number', 'text', 'textarea', 'checkbox', 'timestamp'];
+  var DEFAULT_TEXTAREA_ROWS = 3;
+  var MAX_PICKUP_POINTS = 4;
+  var DEFAULT_NUMBER = /^-?\d+(?:[.,]\d+)?$/;
+
+  var MSG = {
+    required: 'Må fylles ut',
+    invalidFormat: 'Ugyldig format',
+    invalidNumber: 'Ugyldig tall',
+    choose: '–'
+  };
+
+  // Used when the page is opened directly in a browser instead of inside Jotform.
+  // var DEMO = {
+  //   columns: JSON.stringify([
+  //     { name: 'arrived', type: 'timestamp', label: 'Ankomst', validate: '\\d{1,2}[:.,]?\\d{2}', required: true },
+  //     { name: 'parcels', type: 'number', label: 'Antall pakker', required: true },
+  //     { name: 'deviation', type: 'dropdown', label: 'Avvik', options: ['Ingen', 'Forsinket', 'Skadet', 'Mangler'], required: true },
+  //     { name: 'photo', type: 'checkbox', label: 'Bilde tatt' },
+  //     { name: 'comment', type: 'text', label: 'Kommentar' }
+  //   ]),
+  //   pickupPoints: 'Kiwi Sentrum\nCoop Extra Storgata\nRema 1000 Nord\nJoker Fjellet'
+  // };
+  var DEMO = 
+  
+  {
+    columns: JSON.stringify(
+    [
+        {
+          "name": "gjenligg_antall",
+          "type": "number",
+          "label": "Gjenligg antall"
+        },
+        {
+          "name": "gjenligg_aarsak",
+          "type": "textarea",
+          "rows": 2,
+          "label": "Gjenligg årsak"
+        },
+        {
+          "name": "ankomst_bil",
+          "type": "timestamp",
+          "label": "Ankomst bil",
+          "required": true,
+          "validate": "\\d{1,2}[:.]?\\d{2}"
+        },
+        {
+          "name": "sortering_ferdig",
+          "type": "timestamp",
+          "label": "Sortering ferdig",
+          "required": true,
+          "validate": "\\d{1,2}[:.]?\\d{2}"
+        },
+        {
+          "name": "retur_tatt_med",
+          "type": "checkbox",
+          "label": "Retur tatt med"
+        },
+        {
+          "name": "ventepenger_min",
+          "type": "number",
+          "label": "Ventepenger (min)"
+        },
+        {
+          "name": "ventepenger_aarsak",
+          "type": "textarea",
+          "rows": 2,
+          "label": "Ventepenger årsak"
+        }
+      ]
+    ),
+    pickupPoints: 'Gran\nHønefoss'
+  };
+    
+
+
+  var root = document.getElementById('root');
+  var JF = window.JFCustomWidget;
+  var devMode = !JF || window.self === window.top;
+
+  var columns = [];
+  var pickupPoints = [];
+  var cells = []; // cells[columnIndex][pickupIndex] = { el, td }
+  var errorList = null;
+  var showErrors = false;
+
+  // ---------- config ----------
+
+  function parseColumns(raw) {
+    var list;
+
+    try {
+      list = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    } catch (e) {
+      throw new Error('"columns" er ikke gyldig JSON: ' + e.message);
+    }
+    if (!Array.isArray(list) || list.length === 0) {
+      throw new Error('"columns" må være en ikke-tom JSON-liste.');
+    }
+    var seen = {};
+    return list.map(function (c, i) {
+      var where = 'columns[' + i + ']';
+      if (!c || typeof c.name !== 'string' || !c.name) throw new Error(where + ': mangler "name".');
+      if (seen[c.name]) throw new Error(where + ': "name" ' + c.name + ' er brukt flere ganger.');
+      seen[c.name] = true;
+      if (TYPES.indexOf(c.type) === -1) {
+        throw new Error(where + ': ukjent "type" ' + c.type + '. Gyldige: ' + TYPES.join(', ') + '.');
+      }
+      if (c.type === 'dropdown' && (!Array.isArray(c.options) || c.options.length === 0)) {
+        throw new Error(where + ': dropdown må ha "options".');
+      }
+      var rows = null;
+      if (c.type === 'textarea') {
+        rows = c.rows == null ? DEFAULT_TEXTAREA_ROWS : Number(c.rows);
+        if (!(rows >= 1 && rows % 1 === 0)) throw new Error(where + ': "rows" må være et positivt heltall.');
+      }
+      var regex = null;
+      if (c.validate && (c.type === 'text' || c.type === 'textarea' || c.type === 'number')) {
+        try {
+          regex = new RegExp('^(?:' + c.validate + ')$');
+        } catch (e) {
+          throw new Error(where + ': ugyldig "validate": ' + e.message);
+        }
+      }
+      return {
+        name: c.name,
+        type: c.type,
+        label: c.label || c.name,
+        required: !!c.required && c.type !== 'checkbox',
+        options: c.type === 'dropdown' ? c.options.map(String) : null,
+        rows: rows,
+        regex: regex
+      };
+    });
+  }
+
+  function parsePickupPoints(raw) {
+    var list;
+    var text = (raw || '').trim();
+    if (text.charAt(0) === '[') {
+      try {
+        list = JSON.parse(text);
+      } catch (e) {
+        throw new Error('"pickupPoints" er ikke gyldig JSON: ' + e.message);
+      }
+    } else {
+      list = text.split(/\r?\n/);
+    }
+    list = list.map(function (p) { return String(p).trim(); }).filter(Boolean);
+    if (list.length === 0) throw new Error('"pickupPoints" er tom.');
+    if (list.length > MAX_PICKUP_POINTS) {
+      throw new Error('"pickupPoints" har ' + list.length + ' hentesteder, maks er ' + MAX_PICKUP_POINTS + '.');
+    }
+    return list;
+  }
+
+  // ---------- rendering ----------
+
+  function el(tag, attrs, children) {
+    var node = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      if (k === 'text') node.textContent = attrs[k];
+      else if (k === 'className') node.className = attrs[k];
+      else node.setAttribute(k, attrs[k]);
+    });
+    (children || []).forEach(function (child) { node.appendChild(child); });
+    return node;
+  }
+
+  function createControl(col, pickupPoint) {
+    var aria = col.label + ' – ' + pickupPoint;
+    var control;
+    if (col.type === 'checkbox') {
+      control = el('input', { type: 'checkbox', 'aria-label': aria });
+    } else if (col.type === 'dropdown') {
+      control = el('select', { 'aria-label': aria });
+      control.appendChild(el('option', { value: '', text: MSG.choose }));
+      col.options.forEach(function (o) { control.appendChild(el('option', { value: o, text: o })); });
+    } else if (col.type === 'textarea') {
+      control = el('textarea', { rows: col.rows, 'aria-label': aria, autocomplete: 'off' });
+    } else if (col.type === 'timestamp') {
+      // Native time picker; the value is always "HH:MM" or "" (empty or incomplete)
+      control = el('input', { type: 'time', 'aria-label': aria, step: '60' });
+
+      //control = el('input', { type: 'time', 'aria-label': aria });
+    } else {
+      control = el('input', { type: 'text', 'aria-label': aria, autocomplete: 'off' });
+      if (col.type === 'number') {
+        // control.className = 'narrow';
+        // Numeric keypad with a separator key on both iOS and Android
+        control.setAttribute('inputmode', 'decimal');
+      }
+    }
+    var typing = col.type === 'text' || col.type === 'textarea' || col.type === 'number';
+    control.addEventListener(typing ? 'input' : 'change', onChange);
+    // Errors for a cell show once the user has left it (or after a submit attempt)
+    if (col.type !== 'checkbox') control.addEventListener('blur', onBlur);
+    return control;
+  }
+
+  function render() {
+    var colgroup = el('colgroup', {}, [el('col', { className: 'label-col' })].concat(
+      pickupPoints.map(function () { return el('col', { className: 'pp-col' }); })
+    ));
+
+    var headRow = el('tr', {}, [el('th', { scope: 'col' })].concat(
+      pickupPoints.map(function (pp) { return el('th', { scope: 'col', text: pp }); })
+    ));
+
+    cells = [];
+    var body = el('tbody', {}, columns.map(function (col, ci) {
+      var label = el('th', { scope: 'row', text: col.label });
+      if (col.required) label.appendChild(el('span', { className: 'req', 'aria-hidden': 'true', text: '*' }));
+      cells[ci] = [];
+      var tds = pickupPoints.map(function (pp, pi) {
+        var control = createControl(col, pp);
+        var td = el('td', {}, [control]);
+        cells[ci][pi] = { el: control, td: td };
+        return td;
+      });
+      return el('tr', {}, [label].concat(tds));
+    }));
+
+    errorList = el('ul', { className: 'errors', role: 'alert' });
+    root.innerHTML = '';
+    root.appendChild(el('div', { className: 'wrap' }, [
+      el('table', {}, [colgroup, el('thead', {}, [headRow]), body])
+    ]));
+    root.appendChild(errorList);
+  }
+
+  function renderConfigError(err) {
+    root.innerHTML = '';
+    root.appendChild(el('div', { className: 'config-error', text: 'Feil i widget-oppsettet:\n' + err.message }));
+  }
+
+  // ---------- values ----------
+
+  function readCell(col, control) {
+    if (col.type === 'checkbox') return control.checked;
+    var s = control.value.trim();
+    if (col.type !== 'number') return s;
+    if (s === '') return null;
+    var n = Number(s.replace(',', '.'));
+    return isFinite(n) ? n : s;
+  }
+
+  function getValue() {
+    return pickupPoints.map(function (pp, pi) {
+      var values = {};
+      columns.forEach(function (col, ci) { values[col.name] = readCell(col, cells[ci][pi].el); });
+      return { pickupPoint: pp, values: values };
+    });
+  }
+
+  // TEST: submit an HTML table instead of JSON, to see how Jotform renders it in emails.
+  // The JSON is also put in a data attribute, to see whether attributes survive.
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function formatCell(col, v) {
+    if (col.type === 'checkbox') return v ? 'Ja' : 'Nei';
+    if (v === null || v === '') return '';
+    return escapeHtml(v).replace(/\n/g, '<br>');
+  }
+
+  function toHtml(data) {
+    var cellStyle = 'border:1px solid #cbd2d9;padding:4px 8px;text-align:left;vertical-align:top;';
+    var headStyle = cellStyle + 'background:#f0f4f8;font-weight:bold;';
+    var html = '<table data-json="' + escapeHtml(JSON.stringify(data)) + '" ' +
+      'style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px;">';
+    html += '<tr><th style="' + headStyle + '"></th>';
+    data.forEach(function (d) { html += '<th style="' + headStyle + '">' + escapeHtml(d.pickupPoint) + '</th>'; });
+    html += '</tr>';
+    columns.forEach(function (col) {
+      html += '<tr><th style="' + headStyle + '">' + escapeHtml(col.label) + '</th>';
+      data.forEach(function (d) { html += '<td style="' + cellStyle + '">' + formatCell(col, d.values[col.name]) + '</td>'; });
+      html += '</tr>';
+    });
+    return html + '</table>';
+  }
+
+  function restoreValue(raw) {
+    var saved;
+    try {
+      saved = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    } catch (e) {
+      return;
+    }
+    if (!Array.isArray(saved)) return;
+    saved.forEach(function (entry) {
+      var pi = entry && pickupPoints.indexOf(entry.pickupPoint);
+      if (pi === -1 || pi == null || !entry.values) return;
+      columns.forEach(function (col, ci) {
+        var v = entry.values[col.name];
+        if (v === undefined || v === null) return;
+        var control = cells[ci][pi].el;
+        if (col.type === 'checkbox') control.checked = v === true;
+        else control.value = String(v);
+      });
+    });
+  }
+
+  // ---------- validation ----------
+
+  function cellError(col, control) {
+    if (col.type === 'checkbox') return null;
+    var s = control.value.trim();
+    if (s === '') return col.required ? MSG.required : null;
+    if (col.regex) return col.regex.test(s) ? null : MSG.invalidFormat;
+    if (col.type === 'number' && !DEFAULT_NUMBER.test(s)) return MSG.invalidNumber;
+    return null;
+  }
+
+  function validate() {
+    var errors = [];
+    columns.forEach(function (col, ci) {
+      pickupPoints.forEach(function (pp, pi) {
+        var cell = cells[ci][pi];
+        var msg = cellError(col, cell.el);
+        var visible = !!msg && (showErrors || cell.el.dataset.touched === '1');
+        cell.td.classList.toggle('invalid', visible);
+        if (visible) cell.el.setAttribute('aria-invalid', 'true');
+        else cell.el.removeAttribute('aria-invalid');
+        cell.el.title = visible ? msg : '';
+        if (msg) errors.push({ text: pp + ' – ' + col.label + ': ' + msg, visible: visible });
+      });
+    });
+    errorList.innerHTML = '';
+    errors.forEach(function (e) {
+      if (e.visible) errorList.appendChild(el('li', { text: e.text }));
+    });
+    return errors;
+  }
+
+  // ---------- Jotform glue ----------
+
+  function resize() {
+    if (devMode) return;
+    JF.requestFrameResize({ height: Math.ceil(document.documentElement.scrollHeight) });
+  }
+
+  function onBlur(e) {
+    e.target.dataset.touched = '1';
+    validate();
+  }
+
+  function onChange() {
+    validate();
+    if (!devMode) JF.sendData({ value: toHtml(getValue()) });
+  }
+
+  function onSubmit() {
+    showErrors = true;
+    var errors = validate();
+    var result = { valid: errors.length === 0, value: toHtml(getValue()) };
+    if (!devMode) JF.sendSubmit(result);
+    return result;
+  }
+
+  function init(settings, savedValue) {
+    try {
+      
+      columns = parseColumns(settings.columns);
+      pickupPoints = parsePickupPoints(settings.pickupPoints);
+    } catch (err) {
+      renderConfigError(err);
+      return false;
+    }
+    render();
+    if (savedValue) restoreValue(savedValue);
+    validate();
+    return true;
+  }
+
+  if (window.ResizeObserver) new ResizeObserver(resize).observe(document.body);
+
+  if (devMode) {
+    if (init(DEMO, null)) {
+      var out = el('pre', { text: '(trykk knappen)' });
+      var preview = el('div');
+      var btn = el('button', { type: 'button', text: 'Simuler innsending' });
+      btn.addEventListener('click', function () {
+        var r = onSubmit();
+        out.textContent = 'valid: ' + r.valid + '\n\n' + r.value;
+        preview.innerHTML = r.value;
+      });
+      document.body.appendChild(el('div', { className: 'dev' }, [
+        el('strong', { text: 'Utviklermodus (ikke i Jotform)' }), el('br'), btn, preview, out
+      ]));
+    }
+  } else {
+    JF.subscribe('ready', function (data) {
+      init({
+        columns: JF.getWidgetSettings()['columns'],
+        pickupPoints: JF.getWidgetSettings()['pickupPoints']
+      }, data && data.value);
+      resize();
+    });
+    JF.subscribe('submit', onSubmit);
+  }
+})();
+</script>
+</body>
+</html>
