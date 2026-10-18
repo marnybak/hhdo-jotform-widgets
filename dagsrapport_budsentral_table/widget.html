@@ -179,6 +179,7 @@
   var cells = []; // cells[columnIndex][pickupIndex] = { el, td }
   var errorList = null;
   var showErrors = false;
+  var ready = false; // true once the table is rendered from valid settings
 
   // ---------- config ----------
 
@@ -420,6 +421,12 @@
   }
 
   function onSubmit() {
+    // Settings missing/invalid (error box shown) or submit before "ready": no table to validate
+    if (!ready) {
+      var empty = { valid: false, value: '' };
+      if (!devMode) JF.sendSubmit(empty);
+      return empty;
+    }
     showErrors = true;
     var errors = validate();
     var result = { valid: errors.length === 0, value: JSON.stringify(getValue()) };
@@ -428,6 +435,7 @@
   }
 
   function init(settings, savedValue) {
+    ready = false;
     try {
       
       columns = parseColumns(settings.columns);
@@ -437,6 +445,7 @@
       return false;
     }
     render();
+    ready = true;
     if (savedValue) restoreValue(savedValue);
     validate();
     return true;
