@@ -23,16 +23,16 @@
     background: transparent;
     color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    font-size: 14px;
+    font-size: 12px;
   }
   .wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   table { border-collapse: separate; border-spacing: 0; width: 100%; table-layout: fixed; }
-  th, td { border-bottom: 1px solid var(--border); padding: 6px 4px; vertical-align: middle; }
+  th, td { border-bottom: 1px solid var(--border); padding: 6px 4px; vertical-align: middle;}
   thead th {
     background: var(--header-bg);
     font-weight: 600;
-    font-size: 13px;
-    text-align: center;
+    font-size: 12px;
+    text-align: left;
     word-break: break-word;
     hyphens: auto;
   }
@@ -47,12 +47,12 @@
     hyphens: auto;
   }
   thead th:first-child { position: sticky; left: 0; z-index: 2; }
-  col.label-col { width: 32%; }
+  col.label-col { width: 20%; }
   col.pp-col { min-width: 64px; }
   .req { color: var(--error); margin-left: 2px; }
-  td { text-align: center; }
+  td { text-align: left; }
 
-  input[type="text"], select {
+  input[type="text"], select, textarea {
     width: 100%;
     min-width: 0;
     /* 16px prevents iOS from zooming in on focus */
@@ -65,8 +65,9 @@
   }
   input.narrow { max-width: 6.5ch; text-align: center; }
   input[type="checkbox"] { width: 22px; height: 22px; margin: 0; }
-  input:focus, select:focus { outline: 2px solid var(--focus); outline-offset: -1px; }
-  .invalid input, .invalid select { border-color: var(--error); background: var(--error-bg); }
+  textarea { resize: vertical; font-family: inherit; line-height: 1.3; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--focus); outline-offset: -1px; }
+  .invalid input, .invalid select, .invalid textarea { border-color: var(--error); background: var(--error-bg); }
   .invalid input[type="checkbox"] { outline: 2px solid var(--error); }
 
   .errors { color: var(--error); font-size: 13px; margin: 8px 0 0; padding-left: 18px; }
@@ -91,7 +92,8 @@
 (function () {
   'use strict';
 
-  var TYPES = ['dropdown', 'number', 'text', 'checkbox', 'timestamp'];
+  var TYPES = ['dropdown', 'number', 'text', 'textarea', 'checkbox', 'timestamp'];
+  var DEFAULT_TEXTAREA_ROWS = 3;
   var MAX_PICKUP_POINTS = 4;
   var DEFAULT_NUMBER = /^-?\d+(?:[.,]\d+)?$/;
 
@@ -119,7 +121,7 @@
       { name: 'parcels', type: 'number', label: 'Antall pakker', required: true },
       { name: 'deviation', type: 'dropdown', label: 'Avvik', options: ['Ingen', 'Forsinket', 'Skadet', 'Mangler'], required: true },
       { name: 'photo', type: 'checkbox', label: 'Bilde tatt' },
-      { name: 'comment', type: 'text', label: 'Kommentar' }
+      { name: 'comment', type: 'textarea', label: 'Kommentar' }
     ]),
     pickupPoints: 'Kiwi Sentrum\nCoop Extra Storgata\nRema 1000 Nord\nJoker Fjellet'
   };
@@ -161,6 +163,11 @@
       if (c.type === 'dropdown' && (!Array.isArray(c.options) || c.options.length === 0)) {
         throw new Error(where + ': dropdown må ha "options".');
       }
+      var rows = null;
+      if (c.type === 'textarea') {
+        rows = c.rows == null ? DEFAULT_TEXTAREA_ROWS : Number(c.rows);
+        if (!(rows >= 1 && rows % 1 === 0)) throw new Error(where + ': "rows" må være et positivt heltall.');
+      }
       var regex = null;
       if (c.validate && c.type !== 'checkbox' && c.type !== 'dropdown') {
         try {
@@ -175,6 +182,7 @@
         label: c.label || c.name,
         required: !!c.required && c.type !== 'checkbox',
         options: c.type === 'dropdown' ? c.options.map(String) : null,
+        rows: rows,
         regex: regex
       };
     });
@@ -222,16 +230,19 @@
       control = el('select', { 'aria-label': aria });
       control.appendChild(el('option', { value: '', text: MSG.choose }));
       col.options.forEach(function (o) { control.appendChild(el('option', { value: o, text: o })); });
+    } else if (col.type === 'textarea') {
+      control = el('textarea', { rows: col.rows, 'aria-label': aria, autocomplete: 'off' });
     } else {
       control = el('input', { type: 'text', 'aria-label': aria, autocomplete: 'off' });
       if (col.type === 'number' || col.type === 'timestamp') {
-        control.className = 'narrow';
+        // control.className = 'narrow';
         // Numeric keypad with a separator key on both iOS and Android
         control.setAttribute('inputmode', 'decimal');
       }
       if (col.type === 'timestamp') control.setAttribute('maxlength', '5');
     }
-    control.addEventListener(col.type === 'text' ? 'input' : 'change', onChange);
+    var typing = col.type === 'text' || col.type === 'textarea';
+    control.addEventListener(typing ? 'input' : 'change', onChange);
     if (col.type !== 'checkbox' && col.type !== 'dropdown') control.addEventListener('blur', onChange);
     return control;
   }
@@ -364,6 +375,7 @@
 
   function init(settings, savedValue) {
     try {
+      
       columns = parseColumns(settings.columns);
       pickupPoints = parsePickupPoints(settings.pickupPoints);
     } catch (err) {
