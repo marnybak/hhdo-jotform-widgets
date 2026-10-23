@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pickup Point Table</title>
 <script src="https://js.jotform.com/JotFormCustomWidget.min.js"></script>
+<!-- flatpickr: 24-hour time picker on desktop (browsers ignore the OS clock format); native picker on mobile -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"></script>
 <style>
   :root {
     --text: #1f2933;
@@ -63,7 +66,7 @@
     color: var(--text);
   }
   input.narrow { max-width: 6.5ch; text-align: center; }
-  /* iOS Safari collapses an empty time input without an explicit height */
+  /* iOS Safari collapses an empty time input (flatpickr's mobile fallback) without an explicit height */
   input[type="time"] { display: block; min-height: 36px; -webkit-appearance: none; appearance: none; }
   input[type="time"]::-webkit-date-and-time-value { text-align: left; }
   input[type="checkbox"] { width: 22px; height: 22px; margin: 0; }
@@ -264,7 +267,8 @@
     return node;
   }
 
-  function createControl(col, pickupPoint) {
+  // Creates the control for one cell and appends it to td
+  function createControl(col, pickupPoint, td) {
     var aria = col.label + ' – ' + pickupPoint;
     var control;
     if (col.type === 'checkbox') {
@@ -276,10 +280,33 @@
     } else if (col.type === 'textarea') {
       control = el('textarea', { rows: col.rows, 'aria-label': aria, autocomplete: 'off' });
     } else if (col.type === 'timestamp') {
-      // Native time picker; the value is always "HH:MM" or "" (empty or incomplete)
-      control = el('input', { type: 'time', 'aria-label': aria, step: '60' });
-
-      //control = el('input', { type: 'time', 'aria-label': aria });
+      // flatpickr forces 24-hour "HH:MM" on desktop, and swaps in a native <input type="time"> on mobile
+      control = el('input', { type: 'text', 'aria-label': aria, autocomplete: 'off', placeholder: 'tt:mm' });
+      if (!window.flatpickr) {
+        // CDN failed: fall back to the native picker (may show AM/PM on desktop)
+        control = el('input', { type: 'time', 'aria-label': aria, step: '60' });
+        td.appendChild(control);
+        control.addEventListener('change', onChange);
+        control.addEventListener('blur', onBlur);
+        return control;
+      }
+      // Must be in the DOM first, or flatpickr can't insert its mobile input next to it
+      td.appendChild(control);
+      var fp = flatpickr(control, {
+        enableTime: true,
+        noCalendar: true,
+        time_24hr: true,
+        dateFormat: 'H:i',
+        minuteIncrement: 1,
+        allowInput: true,
+        parseDate: parseTime,
+        onOpen: resize,
+        onChange: onChange,
+        // Opening the popup moves focus into it, so "touched" is set on close instead of on blur
+        onClose: function () { control.dataset.touched = '1'; validate(); resize(); }
+      });
+      if (fp.mobileInput) fp.mobileInput.setAttribute('aria-label', aria);
+      return control;
     } else {
       control = el('input', { type: 'text', 'aria-label': aria, autocomplete: 'off' });
       if (col.type === 'number') {
@@ -292,6 +319,7 @@
     control.addEventListener(typing ? 'input' : 'change', onChange);
     // Errors for a cell show once the user has left it (or after a submit attempt)
     if (col.type !== 'checkbox') control.addEventListener('blur', onBlur);
+    td.appendChild(control);
     return control;
   }
 
@@ -310,8 +338,8 @@
       if (col.required) label.appendChild(el('span', { className: 'req', 'aria-hidden': 'true', text: '*' }));
       cells[ci] = [];
       var tds = pickupPoints.map(function (pp, pi) {
-        var control = createControl(col, pp);
-        var td = el('td', {}, [control]);
+        var td = el('td');
+        var control = createControl(col, pp, td);
         cells[ci][pi] = { el: control, td: td };
         return td;
       });
@@ -329,6 +357,20 @@
   function renderConfigError(err) {
     root.innerHTML = '';
     root.appendChild(el('div', { className: 'config-error', text: 'Feil i widget-oppsettet:\n' + err.message }));
+  }
+
+  // Accepts "8:45", "08.45", "0845" and the native picker's "08:45:00"; anything else clears the field
+  function parseTime(s) {
+    var m = /^(\d{1,2})[:.,]?(\d{2})(?::\d{2})?$/.exec(String(s).trim());
+    if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) return undefined;
+    var d = new Date();
+    d.setHours(Number(m[1]), Number(m[2]), 0, 0);
+    return d;
+  }
+
+  // The element the user actually sees: flatpickr hides the original input on mobile
+  function visibleControl(control) {
+    return (control._flatpickr && control._flatpickr.mobileInput) || control;
   }
 
   // ---------- values ----------
@@ -366,6 +408,7 @@
         if (v === undefined || v === null) return;
         var control = cells[ci][pi].el;
         if (col.type === 'checkbox') control.checked = v === true;
+        else if (control._flatpickr) control._flatpickr.setDate(String(v), false);
         else control.value = String(v);
       });
     });
@@ -389,10 +432,11 @@
         var cell = cells[ci][pi];
         var msg = cellError(col, cell.el);
         var visible = !!msg && (showErrors || cell.el.dataset.touched === '1');
+        var shown = visibleControl(cell.el);
         cell.td.classList.toggle('invalid', visible);
-        if (visible) cell.el.setAttribute('aria-invalid', 'true');
-        else cell.el.removeAttribute('aria-invalid');
-        cell.el.title = visible ? msg : '';
+        if (visible) shown.setAttribute('aria-invalid', 'true');
+        else shown.removeAttribute('aria-invalid');
+        shown.title = visible ? msg : '';
         if (msg) errors.push({ text: pp + ' – ' + col.label + ': ' + msg, visible: visible });
       });
     });
