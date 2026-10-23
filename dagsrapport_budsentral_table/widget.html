@@ -281,7 +281,8 @@
       control = el('textarea', { rows: col.rows, 'aria-label': aria, autocomplete: 'off' });
     } else if (col.type === 'timestamp') {
       // flatpickr forces 24-hour "HH:MM" on desktop, and swaps in a native <input type="time"> on mobile
-      control = el('input', { type: 'text', 'aria-label': aria, autocomplete: 'off', placeholder: 'hh:mm' });
+      // set to default value 00:00 
+      control = el('input', { type: 'text', 'aria-label': aria, autocomplete: 'off', placeholder: 'hh:mm', value: '00:00' });
       if (!window.flatpickr) {
         // CDN failed: fall back to the native picker (may show AM/PM on desktop)
         control = el('input', { type: 'time', 'aria-label': aria, step: '60' });
